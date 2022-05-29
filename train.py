@@ -1,4 +1,4 @@
-from torch import optim, nn
+from torch import optim, nn, argmax
 from torchmetrics.functional import accuracy
 
 import pytorch_lightning as pl
@@ -30,7 +30,7 @@ class EfficientNet(pl.LightningModule):
         self.model = models.efficientnet_b3(pretrained=True)
         # Adding linear layer with input 1000 and output num_classes
         self.model.classifier = nn.Sequential(
-            nn.Dropout2d(0.3), nn.Linear(1536, num_classes), nn.Softmax(dim=0)
+            nn.Dropout2d(0.3), nn.Linear(1536, 50), nn.Linear(50, num_classes)
         )
 
     def configure_optimizers(self):
@@ -41,8 +41,7 @@ class EfficientNet(pl.LightningModule):
         image, label = batch
         res_label = self.model(image)
 
-        loss = self.loss(res_label, label)
-        acc = accuracy(res_label, label)
+        loss, acc = self.get_loss_acc(label, res_label)
 
         metrics = {"train_acc": acc, "train_loss": loss}
         self.log_dict(metrics, prog_bar=True, logger=True)
@@ -53,8 +52,7 @@ class EfficientNet(pl.LightningModule):
         image, label = batch
         res_label = self.model(image)
 
-        loss = self.loss(res_label, label)
-        acc = accuracy(res_label, label)
+        loss, acc = self.get_loss_acc(label, res_label)
 
         metrics = {"val_acc": acc, "val_loss": loss}
         self.log_dict(metrics, prog_bar=True, logger=True)
@@ -64,20 +62,26 @@ class EfficientNet(pl.LightningModule):
         image, label = batch
         res_label = self.model(image)
 
-        loss = self.loss(res_label, label)
-        acc = accuracy(res_label, label)
+        loss, acc = self.get_loss_acc(label, res_label)
 
         metrics = {"test_acc": acc, "test_loss": loss}
         self.log_dict(metrics, prog_bar=True, logger=True)
         return metrics
 
+    def get_loss_acc(self, label, res_label):
+        loss = self.loss(res_label, label)
+        res_label = nn.Softmax(dim=1)(res_label)
+        logits = argmax(res_label, dim=1)
+        acc = accuracy(logits, label)
+
+        return loss, acc
 
 if __name__ == "__main__":
 
     # Get arguments from command line
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
+    parser.add_argument("--epochs", type=int, default=150, help="Number of epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--wd", type=float, default=1e-4, help="Weight decay")
     parser.add_argument(
